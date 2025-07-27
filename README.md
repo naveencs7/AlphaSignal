@@ -110,6 +110,10 @@ cp env.example .env
 cd backend
 source venv/bin/activate
 python -m uvicorn app.main:app --reload
+###Start it in the background
+nohup python -m uvicorn app.main:app --reload &
+###you can use the same terminal to start the frontend, with the logs
+python -m uvicorn app.main:app --reload & 
 ```
 - Server: http://localhost:8000
 - API Docs: http://localhost:8000/docs
