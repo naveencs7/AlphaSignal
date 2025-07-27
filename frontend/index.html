@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analyzer - Tata Elxsi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .dashboard {
+            padding: 30px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            border-left: 4px solid #667eea;
+        }
+
+        .card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .stock-price {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .price {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .change {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .change.positive {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .change.negative {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .stat {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+
+        .prediction {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .prediction h3 {
+            color: white;
+        }
+
+        .prediction-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        .confidence {
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .news-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 3px solid #667eea;
+        }
+
+        .news-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .news-date {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+
+        .last-updated {
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 Stock Analyzer</h1>
+            <p>Tata Elxsi (TATAELXSI.NS) - Real-time Analysis & Predictions</p>
+        </div>
+
+        <div class="dashboard">
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+            
+            <div id="loading" class="loading">
+                <h3>Loading dashboard data...</h3>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+
+            <div id="dashboard-content" style="display: none;">
+                <div class="grid">
+                    <!-- Stock Price Card -->
+                    <div class="card">
+                        <h3>💰 Current Stock Price</h3>
+                        <div class="stock-price">
+                            <div class="price" id="current-price">₹0</div>
+                            <div class="change" id="price-change">0%</div>
+                        </div>
+                        <div class="stats">
+                            <div class="stat">
+                                <div class="stat-value" id="volume">0</div>
+                                <div class="stat-label">Volume</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-value" id="market-cap">₹0</div>
+                                <div class="stat-label">Market Cap</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prediction Card -->
+                    <div class="card prediction">
+                        <h3>🔮 Price Prediction</h3>
+                        <div class="prediction-value" id="predicted-price">₹0</div>
+                        <div>Predicted for: <span id="prediction-date">-</span></div>
+                        <div class="confidence">
+                            Confidence: <span id="confidence-score">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- News Card -->
+                    <div class="card">
+                        <h3>📰 Latest News</h3>
+                        <div id="news-container">
+                            <p>No recent news available</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="last-updated">
+                    Last updated: <span id="last-updated">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+
+        async function loadDashboard() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('dashboard-content');
+
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            content.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/dashboard`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayDashboard(data);
+                
+            } catch (err) {
+                console.error('Error loading dashboard:', err);
+                error.textContent = `Error loading data: ${err.message}`;
+                error.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayDashboard(data) {
+            const content = document.getElementById('dashboard-content');
+            
+            // Stock Price
+            const currentPrice = data.stock_info.current_price;
+            document.getElementById('current-price').textContent = `₹${currentPrice.current_price.toLocaleString()}`;
+            
+            const changeElement = document.getElementById('price-change');
+            const changePercent = currentPrice.change_percent;
+            changeElement.textContent = `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+            changeElement.className = `change ${changePercent >= 0 ? 'positive' : 'negative'}`;
+            
+            document.getElementById('volume').textContent = currentPrice.volume.toLocaleString();
+            document.getElementById('market-cap').textContent = `₹${(currentPrice.market_cap / 1000000000).toFixed(1)}B`;
+
+            // Prediction
+            const prediction = data.prediction;
+            document.getElementById('predicted-price').textContent = `₹${prediction.predicted_price.toLocaleString()}`;
+            document.getElementById('prediction-date').textContent = new Date(prediction.prediction_date).toLocaleDateString();
+            document.getElementById('confidence-score').textContent = `${(prediction.confidence_score * 100).toFixed(1)}%`;
+
+            // News
+            const newsContainer = document.getElementById('news-container');
+            if (data.news_summary.news_items && data.news_summary.news_items.length > 0) {
+                newsContainer.innerHTML = data.news_summary.news_items.map(news => `
+                    <div class="news-item">
+                        <div class="news-title">${news.title}</div>
+                        <div class="news-date">${new Date(news.published_date).toLocaleDateString()}</div>
+                    </div>
+                `).join('');
+            } else {
+                newsContainer.innerHTML = '<p>No recent news available</p>';
+            }
+
+            // Last updated
+            document.getElementById('last-updated').textContent = new Date(data.last_updated).toLocaleString();
+
+            content.style.display = 'block';
+        }
+
+        // Load dashboard on page load
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadDashboard, 5 * 60 * 1000);
+    </script>
+</body>
+</html> 

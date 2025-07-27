@@ -1,0 +1,247 @@
+import feedparser
+import requests
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+import logging
+from sqlalchemy.orm import Session
+from ..models import News
+from ..schemas import NewsCreate
+import os
+import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class NewsService:
+    def __init__(self):
+        self.rss_url = os.getenv("NEWS_RSS_URL", "https://www.moneycontrol.com/rss/markets.xml")
+        self.default_stock = os.getenv("STOCK_SYMBOL", "TATAELXSI.NS")
+        self.stock_name = os.getenv("STOCK_NAME", "Tata Elxsi")
+    
+    def fetch_news_from_rss(self, rss_url: str = None) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch news from RSS feed
+        """
+        if rss_url is None:
+            rss_url = self.rss_url
+        
+        try:
+            logger.info(f"Fetching news from RSS feed: {rss_url}")
+            
+            # Parse RSS feed
+            feed = feedparser.parse(rss_url)
+            
+            if not feed.entries:
+                logger.warning("No entries found in RSS feed")
+                return None
+            
+            news_items = []
+            
+            for entry in feed.entries:
+                try:
+                    # Parse publication date
+                    published_date = datetime.now()
+                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                        published_date = datetime(*entry.published_parsed[:6])
+                    
+                    news_item = {
+                        'title': entry.title if hasattr(entry, 'title') else '',
+                        'description': entry.description if hasattr(entry, 'description') else '',
+                        'link': entry.link if hasattr(entry, 'link') else '',
+                        'published_date': published_date,
+                        'source': 'Moneycontrol'
+                    }
+                    
+                    news_items.append(news_item)
+                    
+                except Exception as e:
+                    logger.warning(f"Error parsing news entry: {str(e)}")
+                    continue
+            
+            logger.info(f"Successfully fetched {len(news_items)} news items from RSS")
+            return news_items
+            
+        except Exception as e:
+            logger.error(f"Error fetching news from RSS: {str(e)}")
+            return None
+    
+    def filter_news_by_stock(self, news_items: List[Dict[str, Any]], stock_symbol: str = None, stock_name: str = None) -> List[Dict[str, Any]]:
+        """
+        Filter news items that are related to the specified stock
+        """
+        if stock_symbol is None:
+            stock_symbol = self.default_stock
+        
+        if stock_name is None:
+            stock_name = self.stock_name
+        
+        try:
+            logger.info(f"Filtering news for stock: {stock_name} ({stock_symbol})")
+            
+            # Create search keywords
+            keywords = [
+                stock_name.lower(),
+                stock_symbol.lower().replace('.ns', '').replace('.bo', ''),
+                'tata elxsi',
+                'elxsi'
+            ]
+            
+            # Remove common suffixes for broader matching
+            base_symbol = stock_symbol.split('.')[0].lower()
+            keywords.append(base_symbol)
+            
+            filtered_news = []
+            
+            for news_item in news_items:
+                title = news_item.get('title', '').lower()
+                description = news_item.get('description', '').lower()
+                
+                # Check if any keyword is present in title or description
+                is_related = any(keyword in title or keyword in description for keyword in keywords)
+                
+                if is_related:
+                    news_item['related_stock'] = stock_symbol
+                    filtered_news.append(news_item)
+                    logger.info(f"Found related news: {news_item.get('title', '')[:50]}...")
+            
+            logger.info(f"Filtered {len(filtered_news)} news items related to {stock_name}")
+            return filtered_news
+            
+        except Exception as e:
+            logger.error(f"Error filtering news: {str(e)}")
+            return []
+    
+    def save_news_to_db(self, db: Session, news_items: List[Dict[str, Any]]) -> bool:
+        """
+        Save news items to database
+        """
+        try:
+            logger.info(f"Saving {len(news_items)} news items to database")
+            
+            saved_count = 0
+            
+            for news_item in news_items:
+                # Check if news already exists (by link)
+                existing_news = db.query(News).filter(
+                    News.link == news_item['link']
+                ).first()
+                
+                if existing_news:
+                    logger.debug(f"News already exists: {news_item.get('title', '')[:30]}...")
+                    continue
+                
+                # Create new news record
+                news = News(
+                    title=news_item['title'],
+                    description=news_item.get('description', ''),
+                    link=news_item['link'],
+                    published_date=news_item['published_date'],
+                    source=news_item['source'],
+                    related_stock=news_item.get('related_stock')
+                )
+                
+                db.add(news)
+                saved_count += 1
+            
+            db.commit()
+            logger.info(f"Successfully saved {saved_count} new news items to database")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving news to database: {str(e)}")
+            db.rollback()
+            return False
+    
+    def get_news_from_db(self, db: Session, stock_symbol: str = None, limit: int = 5, days: int = 7) -> List[News]:
+        """
+        Get news from database
+        """
+        if stock_symbol is None:
+            stock_symbol = self.default_stock
+        
+        try:
+            # Calculate start date
+            start_date = datetime.now() - timedelta(days=days)
+            
+            # Query database
+            news_items = db.query(News).filter(
+                News.related_stock == stock_symbol,
+                News.published_date >= start_date
+            ).order_by(News.published_date.desc()).limit(limit).all()
+            
+            logger.info(f"Retrieved {len(news_items)} news items from database for {stock_symbol}")
+            return news_items
+            
+        except Exception as e:
+            logger.error(f"Error retrieving news from database: {str(e)}")
+            return []
+    
+    def update_news_data(self, db: Session, stock_symbol: str = None) -> bool:
+        """
+        Update news data by fetching from RSS and saving to database
+        """
+        if stock_symbol is None:
+            stock_symbol = self.default_stock
+        
+        try:
+            # Fetch news from RSS
+            news_items = self.fetch_news_from_rss()
+            
+            if news_items is None:
+                return False
+            
+            # Filter news for the specific stock
+            filtered_news = self.filter_news_by_stock(news_items, stock_symbol)
+            
+            if not filtered_news:
+                logger.info("No relevant news found for the stock")
+                return True  # Not an error, just no relevant news
+            
+            # Save to database
+            return self.save_news_to_db(db, filtered_news)
+            
+        except Exception as e:
+            logger.error(f"Error updating news data for {stock_symbol}: {str(e)}")
+            return False
+    
+    def get_latest_news_summary(self, db: Session, stock_symbol: str = None, limit: int = 5) -> Dict[str, Any]:
+        """
+        Get a summary of latest news for the stock
+        """
+        if stock_symbol is None:
+            stock_symbol = self.default_stock
+        
+        try:
+            news_items = self.get_news_from_db(db, stock_symbol, limit)
+            
+            summary = {
+                'stock_symbol': stock_symbol,
+                'total_news': len(news_items),
+                'latest_news_date': None,
+                'news_items': []
+            }
+            
+            if news_items:
+                summary['latest_news_date'] = news_items[0].published_date
+                
+                for news in news_items:
+                    summary['news_items'].append({
+                        'id': news.id,
+                        'title': news.title,
+                        'description': news.description,
+                        'link': news.link,
+                        'published_date': news.published_date,
+                        'source': news.source
+                    })
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error getting news summary: {str(e)}")
+            return {
+                'stock_symbol': stock_symbol,
+                'total_news': 0,
+                'latest_news_date': None,
+                'news_items': []
+            } 
