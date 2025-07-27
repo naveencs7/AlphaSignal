@@ -22,7 +22,7 @@ A comprehensive stock analysis and prediction tool for Indian small-cap stocks, 
 ## Project Structure
 
 ```
-mvp-phase1/
+AlphaSignal/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
@@ -86,7 +86,7 @@ mvp-phase1/
 1. **Clone and Setup**
 ```bash
 git clone <repository-url>
-cd mvp-phase1
+cd AlphaSignal
 ```
 
 2. **Backend Setup**
@@ -142,6 +142,13 @@ python test_setup.py
 - **[News Sources](docs/NEWS_SOURCES.md)** - Comprehensive news sources analysis
 - **[Known Issues](docs/ISSUES.md)** - Current limitations and solutions
 
+## News Aggregation Pipeline
+
+- **Multi-source RSS Discovery:** Aggregates news from multiple sources (Feedspot, GitHub Lists, direct publishers, etc.)
+- **Raw News Storage:** All fetched news is stored in the database with provenance and fetch time.
+- **Deduplication:** Rule-based deduplication merges news from different sources, preserving extra info.
+- **Aggregated News API:** Frontend fetches deduplicated news with sources and additional info for display.
+
 ## Next Steps
 
 - React frontend with interactive charts
@@ -149,6 +156,11 @@ python test_setup.py
 - Multiple stock support
 - User authentication & portfolios
 - Real-time notifications
+- **Integrate dynamic RSS discovery (scraping Feedspot, Inoreader, etc.)**
+- **Enhance deduplication with ML/NLP**
+- **Add background jobs for scheduled news/data updates**
+- **Improve error handling and monitoring**
+- **Document technical and business issues in separate files**
 
 ## Contributing
 

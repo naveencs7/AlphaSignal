@@ -337,6 +337,75 @@ curl -X POST http://localhost:8000/api/update-all
 
 ---
 
+## News Aggregation Pipeline
+
+### Discover and Store RSS Sources
+
+#### `POST /api/news/discover-sources`
+Discovers RSS feeds from aggregators and stores them in the database.
+
+**Response:**
+```json
+{"status": "sources discovered"}
+```
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/news/discover-sources
+```
+
+### Fetch and Store Raw News
+
+#### `POST /api/news/fetch-raw`
+Fetches news from all stored RSS feeds and saves each item as raw news.
+
+**Response:**
+```json
+{"status": "raw news fetched"}
+```
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/news/fetch-raw
+```
+
+### Deduplicate and Store Aggregated News
+
+#### `POST /api/news/deduplicate`
+Deduplicates raw news and stores the result in the aggregated news table.
+
+**Response:**
+```json
+{"status": "news deduplicated"}
+```
+**Example:**
+```bash
+curl -X POST http://localhost:8000/api/news/deduplicate
+```
+
+### Get Aggregated (Deduplicated) News
+
+#### `GET /api/news/aggregated?limit=10`
+Returns the latest deduplicated news for the frontend, including sources and additional info.
+
+**Response:**
+```json
+[
+  {
+    "title": "Tata Elxsi reports strong Q2 results",
+    "description": "Company announces 15% growth in revenue...",
+    "published_date": "2025-07-27T10:00:00",
+    "sources": ["Economic Times", "Business Standard"],
+    "additional_info": {
+      "source": "Business Standard",
+      "details": "Business Standard provided more in-depth analysis on the revenue split."
+    }
+  }
+]
+```
+**Example:**
+```bash
+curl http://localhost:8000/api/news/aggregated?limit=10
+```
+
 ## Error Codes
 
 | Status Code | Description |

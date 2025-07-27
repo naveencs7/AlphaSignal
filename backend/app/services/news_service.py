@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import logging
 from sqlalchemy.orm import Session
-from ..models import News
-from ..schemas import NewsCreate
+from ..models import News, RSSSource, RawNews, AggregatedNews
 import os
 import re
+import difflib
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,56 +15,83 @@ logger = logging.getLogger(__name__)
 
 class NewsService:
     def __init__(self):
-        self.rss_url = os.getenv("NEWS_RSS_URL", "https://www.moneycontrol.com/rss/markets.xml")
+        # List of curated RSS feeds (top 2 from each aggregator, no duplicates)
+        self.rss_sources = [
+            # Direct from publisher
+            {"name": "Economic Times Markets", "url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"},
+            {"name": "Business Standard", "url": "https://www.business-standard.com/rss-feeds/listing"},
+            # CNBC-TV18
+            {"name": "CNBC-TV18", "url": "https://www.cnbctv18.com/rss/"},
+            # NSE India
+            {"name": "NSE India", "url": "https://www.nseindia.com/rss-feed"},
+            # Times of India Business
+            {"name": "Times of India Business", "url": "https://timesofindia.indiatimes.com/rss.cms"},
+            # Add more as needed from Feedspot, Inoreader, GitHub, Reddit, etc.
+        ]
         self.default_stock = os.getenv("STOCK_SYMBOL", "TATAELXSI.NS")
         self.stock_name = os.getenv("STOCK_NAME", "Tata Elxsi")
     
-    def fetch_news_from_rss(self, rss_url: str = None) -> Optional[List[Dict[str, Any]]]:
+    def fetch_news_from_all_sources(self) -> (List[Dict[str, Any]], List[Dict[str, Any]]):
         """
-        Fetch news from RSS feed
+        Fetch news from all RSS sources, track health status, and deduplicate news.
+        Returns (deduped_news, sources_status)
         """
-        if rss_url is None:
-            rss_url = self.rss_url
-        
-        try:
-            logger.info(f"Fetching news from RSS feed: {rss_url}")
-            
-            # Parse RSS feed
-            feed = feedparser.parse(rss_url)
-            
-            if not feed.entries:
-                logger.warning("No entries found in RSS feed")
-                return None
-            
-            news_items = []
-            
-            for entry in feed.entries:
-                try:
+        all_news = []
+        sources_status = []
+        seen = {}
+        for source in self.rss_sources:
+            url = source["url"]
+            name = source["name"]
+            try:
+                feed = feedparser.parse(url)
+                if not feed.entries:
+                    sources_status.append({"name": name, "url": url, "status": "failed"})
+                    continue
+                sources_status.append({"name": name, "url": url, "status": "ok"})
+                for entry in feed.entries:
                     # Parse publication date
                     published_date = datetime.now()
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
                         published_date = datetime(*entry.published_parsed[:6])
-                    
+                    # Deduplication key: title + date (ignore case/punct)
+                    title_key = re.sub(r'[^a-zA-Z0-9 ]', '', entry.title.lower()) if hasattr(entry, 'title') else ''
+                    date_key = published_date.strftime('%Y-%m-%d')
+                    dedup_key = f"{title_key}_{date_key}"
+                    # Prepare news item
                     news_item = {
                         'title': entry.title if hasattr(entry, 'title') else '',
                         'description': entry.description if hasattr(entry, 'description') else '',
                         'link': entry.link if hasattr(entry, 'link') else '',
                         'published_date': published_date,
-                        'source': 'Moneycontrol'
+                        'source': name
                     }
-                    
-                    news_items.append(news_item)
-                    
-                except Exception as e:
-                    logger.warning(f"Error parsing news entry: {str(e)}")
-                    continue
-            
-            logger.info(f"Successfully fetched {len(news_items)} news items from RSS")
-            return news_items
-            
-        except Exception as e:
-            logger.error(f"Error fetching news from RSS: {str(e)}")
-            return None
+                    # Deduplication logic
+                    if dedup_key in seen:
+                        # Merge sources and extra info
+                        seen[dedup_key]['sources'].append(name)
+                        # If this source has more info, add to additional_info
+                        if len(entry.description if hasattr(entry, 'description') else '') > len(seen[dedup_key]['description']):
+                            seen[dedup_key]['additional_info'] = {
+                                'source': name,
+                                'details': entry.description
+                            }
+                    else:
+                        seen[dedup_key] = {
+                            'title': news_item['title'],
+                            'description': news_item['description'],
+                            'link': news_item['link'],
+                            'published_date': news_item['published_date'],
+                            'sources': [name],
+                            'additional_info': None
+                        }
+            except Exception as e:
+                sources_status.append({"name": name, "url": url, "status": f"failed: {str(e)}"})
+                continue
+        # Prepare deduped news list
+        deduped_news = []
+        for item in seen.values():
+            deduped_news.append(item)
+        return deduped_news, sources_status
     
     def filter_news_by_stock(self, news_items: List[Dict[str, Any]], stock_symbol: str = None, stock_name: str = None) -> List[Dict[str, Any]]:
         """
@@ -245,3 +272,105 @@ class NewsService:
                 'latest_news_date': None,
                 'news_items': []
             } 
+
+    def discover_and_store_rss_sources(self, db: Session):
+        """
+        Discover RSS feeds from aggregator sites and store them in rss_sources table.
+        For now, this is a placeholder for scraping/parsing logic. Add direct and curated links.
+        """
+        aggregator_sources = [
+            ("Feedspot", [
+                "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+                "https://www.business-standard.com/rss-feeds/listing",
+            ]),
+            ("GitHub List", [
+                "https://www.cnbctv18.com/rss/",
+                "https://www.nseindia.com/rss-feed",
+            ]),
+            ("Direct", [
+                "https://timesofindia.indiatimes.com/rss.cms"
+            ]),
+        ]
+        for source, urls in aggregator_sources:
+            for url in urls:
+                existing = db.query(RSSSource).filter(RSSSource.url == url).first()
+                if not existing:
+                    rss_source = RSSSource(url=url, source=source)
+                    db.add(rss_source)
+        db.commit()
+
+    def fetch_and_store_raw_news(self, db: Session):
+        """
+        Fetch news from all RSS sources in DB, store raw news in raw_news table.
+        """
+        rss_sources = db.query(RSSSource).all()
+        for rss_source in rss_sources:
+            try:
+                feed = feedparser.parse(rss_source.url)
+                for entry in feed.entries:
+                    published_date = datetime.now()
+                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                        published_date = datetime(*entry.published_parsed[:6])
+                    # Check if already exists (by link)
+                    exists = db.query(RawNews).filter(RawNews.link == entry.link).first()
+                    if not exists:
+                        raw_news = RawNews(
+                            rss_source_id=rss_source.id,
+                            title=entry.title if hasattr(entry, 'title') else '',
+                            description=entry.description if hasattr(entry, 'description') else '',
+                            link=entry.link if hasattr(entry, 'link') else '',
+                            published_date=published_date
+                        )
+                        db.add(raw_news)
+                db.commit()
+            except Exception as e:
+                logger.error(f"Error fetching news from {rss_source.url}: {str(e)}")
+
+    def deduplicate_and_store_aggregated_news(self, db: Session):
+        """
+        Deduplicate raw news and store in aggregated_news table (rule-based: title+date+fuzzy).
+        """
+        raw_news = db.query(RawNews).all()
+        seen = []
+        for news in raw_news:
+            # Try to find a similar news in seen (title+date+fuzzy)
+            found = None
+            for agg in seen:
+                # Fuzzy match on title
+                ratio = difflib.SequenceMatcher(None, news.title.lower(), agg['title'].lower()).ratio()
+                same_date = news.published_date.date() == agg['published_date'].date()
+                if ratio > 0.85 and same_date:
+                    found = agg
+                    break
+            if found:
+                found['sources'].append(news.rss_source.source)
+                # If this news has more info, update additional_info
+                if len(news.description or '') > len(found['description'] or ''):
+                    found['additional_info'] = {
+                        'source': news.rss_source.source,
+                        'details': news.description
+                    }
+            else:
+                seen.append({
+                    'title': news.title,
+                    'description': news.description,
+                    'published_date': news.published_date,
+                    'sources': [news.rss_source.source],
+                    'additional_info': None
+                })
+        # Store in aggregated_news table
+        for agg in seen:
+            exists = db.query(AggregatedNews).filter(
+                AggregatedNews.title == agg['title'],
+                AggregatedNews.published_date == agg['published_date']
+            ).first()
+            if not exists:
+                aggregated = AggregatedNews(
+                    title=agg['title'],
+                    description=agg['description'],
+                    published_date=agg['published_date'],
+                    sources=agg['sources'],
+                    additional_info=agg['additional_info']
+                )
+                db.add(aggregated)
+        db.commit() 

@@ -259,6 +259,13 @@
                     </div>
                 </div>
 
+                <div id="news-aggregated-section" class="card" style="margin: 30px;">
+                    <h3>📰 Aggregated News (Multi-Source)</h3>
+                    <div id="aggregated-news-container">
+                        <p>Loading aggregated news...</p>
+                    </div>
+                </div>
+
                 <div class="last-updated">
                     Last updated: <span id="last-updated">-</span>
                 </div>
@@ -336,11 +343,38 @@
             content.style.display = 'block';
         }
 
+        async function loadAggregatedNews() {
+            const container = document.getElementById('aggregated-news-container');
+            try {
+                const response = await fetch(`${API_BASE}/news/aggregated?limit=10`);
+                if (!response.ok) throw new Error('Failed to fetch aggregated news');
+                const news = await response.json();
+                if (news.length === 0) {
+                    container.innerHTML = '<p>No aggregated news available.</p>';
+                    return;
+                }
+                container.innerHTML = news.map(item => `
+                    <div class="news-item">
+                        <div class="news-title">${item.title}</div>
+                        <div class="news-date">${new Date(item.published_date).toLocaleDateString()}</div>
+                        <div><b>Sources:</b> ${item.sources ? item.sources.join(', ') : '-'}</div>
+                        ${item.additional_info && item.additional_info.details ? `<div><b>Additional Info (${item.additional_info.source}):</b> ${item.additional_info.details}</div>` : ''}
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = `<div class="error">${err.message}</div>`;
+            }
+        }
+
         // Load dashboard on page load
-        document.addEventListener('DOMContentLoaded', loadDashboard);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDashboard();
+            loadAggregatedNews();
+        });
 
         // Auto-refresh every 5 minutes
         setInterval(loadDashboard, 5 * 60 * 1000);
+        setInterval(loadAggregatedNews, 5 * 60 * 1000);
     </script>
 </body>
 </html> 

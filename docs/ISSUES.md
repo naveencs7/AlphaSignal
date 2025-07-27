@@ -1,5 +1,7 @@
 # Known Issues & Limitations
 
+**Note:** Technical issues are now tracked in technical_issues.md. This file is for business/product issues only.
+
 ## Current Issues
 
 ### **1. Price Accuracy Issues**
@@ -114,102 +116,6 @@ def enhanced_prediction(stock_data):
     prediction = ml_model.predict(features)
     return prediction
 ```
-
----
-
-## Technical Limitations
-
-### **1. Database Limitations**
-
-#### **Problem**
-- SQLite database for MVP
-- Limited concurrent connections
-- No advanced query optimization
-
-#### **Solutions**
-1. **PostgreSQL Migration**: Switch to PostgreSQL for production
-2. **Connection Pooling**: Implement proper connection management
-3. **Query Optimization**: Add indexes and optimize queries
-
-### **2. Background Job Processing**
-
-#### **Problem**
-- Manual data updates required
-- No scheduled tasks
-- No real-time updates
-
-#### **Solutions**
-1. **Celery Integration**: Add background job processing
-2. **Scheduled Tasks**: Implement cron-like scheduling
-3. **Real-time Updates**: Add WebSocket support
-
-### **3. Error Handling**
-
-#### **Problem**
-- Basic error handling
-- No comprehensive logging
-- Limited debugging information
-
-#### **Solutions**
-1. **Structured Logging**: Implement proper logging
-2. **Error Monitoring**: Add error tracking and alerting
-3. **Graceful Degradation**: Handle failures gracefully
-
----
-
-## Performance Issues
-
-### **1. API Response Times**
-
-#### **Problem**
-- Slow response times for complex queries
-- No caching implemented
-- Synchronous external API calls
-
-#### **Solutions**
-1. **Caching**: Implement Redis caching
-2. **Async Operations**: Use async/await for external calls
-3. **Database Optimization**: Optimize database queries
-
-### **2. Frontend Performance**
-
-#### **Problem**
-- No client-side caching
-- Frequent API calls
-- No progressive loading
-
-#### **Solutions**
-1. **Local Storage**: Cache data in browser
-2. **Debounced Requests**: Reduce API call frequency
-3. **Progressive Loading**: Load data incrementally
-
----
-
-## Security Concerns
-
-### **1. API Security**
-
-#### **Problem**
-- No authentication implemented
-- No rate limiting
-- CORS configuration too permissive
-
-#### **Solutions**
-1. **Authentication**: Add JWT-based authentication
-2. **Rate Limiting**: Implement API rate limiting
-3. **CORS Configuration**: Restrict CORS to specific domains
-
-### **2. Data Security**
-
-#### **Problem**
-- Environment variables in plain text
-- No data encryption
-- SQL injection vulnerabilities (mitigated by ORM)
-
-#### **Solutions**
-1. **Environment Management**: Use secure environment management
-2. **Data Encryption**: Encrypt sensitive data
-3. **Input Validation**: Strengthen input validation
 
 ---
 

@@ -10,7 +10,7 @@ from ..schemas import (
     StockPriceResponse, StockHistoryResponse, NewsResponse, 
     PredictionResponse, StockRequest, NewsRequest, PredictionRequest
 )
-from ..models import StockPrice, News, Prediction
+from ..models import StockPrice, News, Prediction, AggregatedNews, RSSSource, RawNews
 
 router = APIRouter(prefix="/api", tags=["stock-analyzer"])
 
@@ -135,6 +135,39 @@ async def update_news_data(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating news data: {str(e)}")
+
+@router.post("/news/discover-sources")
+async def discover_rss_sources(db: Session = Depends(get_db)):
+    """Discover and store RSS sources from aggregators."""
+    news_service.discover_and_store_rss_sources(db)
+    return {"status": "sources discovered"}
+
+@router.post("/news/fetch-raw")
+async def fetch_raw_news(db: Session = Depends(get_db)):
+    """Fetch and store raw news from all RSS sources."""
+    news_service.fetch_and_store_raw_news(db)
+    return {"status": "raw news fetched"}
+
+@router.post("/news/deduplicate")
+async def deduplicate_news(db: Session = Depends(get_db)):
+    """Deduplicate raw news and store in aggregated news table."""
+    news_service.deduplicate_and_store_aggregated_news(db)
+    return {"status": "news deduplicated"}
+
+@router.get("/news/aggregated")
+async def get_aggregated_news(limit: int = 10, db: Session = Depends(get_db)):
+    """Get deduplicated, aggregated news for the frontend."""
+    news = db.query(AggregatedNews).order_by(AggregatedNews.published_date.desc()).limit(limit).all()
+    return [
+        {
+            "title": n.title,
+            "description": n.description,
+            "published_date": n.published_date,
+            "sources": n.sources,
+            "additional_info": n.additional_info
+        }
+        for n in news
+    ]
 
 # Prediction Routes
 @router.get("/prediction", response_model=PredictionResponse)

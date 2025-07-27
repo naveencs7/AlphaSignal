@@ -1,0 +1,3 @@
+# Architecture & Data Flow (v2)
+
+// ... Paste the full content of current ARCHITECTURE.md here ... 

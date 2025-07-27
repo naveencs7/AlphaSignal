@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, Index, JSON, ForeignKey
 from sqlalchemy.sql import func
 from .database import Base
+from sqlalchemy.orm import relationship
+from datetime import datetime
 
 class StockPrice(Base):
     """Model for storing stock price data"""
@@ -80,3 +82,32 @@ class Prediction(Base):
     __table_args__ = (
         Index('idx_symbol_prediction_date', 'stock_symbol', 'prediction_date'),
     ) 
+
+class RSSSource(Base):
+    __tablename__ = 'rss_sources'
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String(1000), unique=True, nullable=False)
+    source = Column(String(100), nullable=False)  # e.g., Feedspot, GitHub List
+    discovered_at = Column(DateTime, default=datetime.utcnow)
+    raw_news = relationship('RawNews', back_populates='rss_source')
+
+class RawNews(Base):
+    __tablename__ = 'raw_news'
+    id = Column(Integer, primary_key=True, index=True)
+    rss_source_id = Column(Integer, ForeignKey('rss_sources.id'))
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+    link = Column(String(1000), nullable=False)
+    published_date = Column(DateTime, nullable=False)
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+    rss_source = relationship('RSSSource', back_populates='raw_news')
+
+class AggregatedNews(Base):
+    __tablename__ = 'aggregated_news'
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+    published_date = Column(DateTime, nullable=False)
+    sources = Column(JSON)  # List of sources that had this news
+    additional_info = Column(JSON)  # Optional: extra info from a source
+    created_at = Column(DateTime, default=datetime.utcnow) 

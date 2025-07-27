@@ -1,0 +1,3 @@
+# AlphaSignal - Stock Analysis & Prediction Tool (v2)
+
+// ... Paste the full content of current README.md here ... 
