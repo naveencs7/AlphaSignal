@@ -1,5 +1,7 @@
 import feedparser
 import requests
+import ssl
+import certifi
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import logging
@@ -15,18 +17,21 @@ logger = logging.getLogger(__name__)
 
 class NewsService:
     def __init__(self):
-        # List of curated RSS feeds (top 2 from each aggregator, no duplicates)
+        # List of curated RSS feeds (discovered from various sources)
         self.rss_sources = [
-            # Direct from publisher
+            # Direct from publisher (working)
             {"name": "Economic Times Markets", "url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"},
-            {"name": "Business Standard", "url": "https://www.business-standard.com/rss-feeds/listing"},
-            # CNBC-TV18
-            {"name": "CNBC-TV18", "url": "https://www.cnbctv18.com/rss/"},
-            # NSE India
-            {"name": "NSE India", "url": "https://www.nseindia.com/rss-feed"},
-            # Times of India Business
-            {"name": "Times of India Business", "url": "https://timesofindia.indiatimes.com/rss.cms"},
-            # Add more as needed from Feedspot, Inoreader, GitHub, Reddit, etc.
+            
+            # CNBC-TV18 feeds (discovered)
+            {"name": "CNBC-TV18 Latest", "url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/latest.xml"},
+            {"name": "CNBC-TV18 Business", "url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/business.xml"},
+            {"name": "CNBC-TV18 Economy", "url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/economy.xml"},
+            {"name": "CNBC-TV18 Market", "url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml"},
+            
+            # Times of India feeds (discovered)
+            {"name": "Times of India Top Stories", "url": "http://timesofindia.indiatimes.com/rssfeedstopstories.cms"},
+            {"name": "Times of India Most Recent", "url": "http://timesofindia.indiatimes.com/rssfeedmostrecent.cms"},
+            {"name": "Times of India Business", "url": "http://timesofindia.indiatimes.com/rssfeeds/3942666.cms"},
         ]
         self.default_stock = os.getenv("STOCK_SYMBOL", "TATAELXSI.NS")
         self.stock_name = os.getenv("STOCK_NAME", "Tata Elxsi")
@@ -39,11 +44,26 @@ class NewsService:
         all_news = []
         sources_status = []
         seen = {}
+        
         for source in self.rss_sources:
             url = source["url"]
             name = source["name"]
             try:
-                feed = feedparser.parse(url)
+                # Try with proper SSL first
+                try:
+                    response = requests.get(url, verify=certifi.where(), timeout=10)
+                    response.raise_for_status()
+                    logger.info(f"Successfully fetched {name} with SSL verification")
+                except Exception as ssl_error:
+                    # Fall back to unverified SSL for development
+                    logger.warning(f"SSL verification failed for {name}, trying without verification: {str(ssl_error)}")
+                    response = requests.get(url, verify=False, timeout=10)
+                    response.raise_for_status()
+                    logger.info(f"Successfully fetched {name} without SSL verification")
+                
+                # Parse the content with feedparser
+                feed = feedparser.parse(response.content)
+                
                 if not feed.entries:
                     sources_status.append({"name": name, "url": url, "status": "failed"})
                     continue
@@ -299,33 +319,6 @@ class NewsService:
                     db.add(rss_source)
         db.commit()
 
-    def fetch_and_store_raw_news(self, db: Session):
-        """
-        Fetch news from all RSS sources in DB, store raw news in raw_news table.
-        """
-        rss_sources = db.query(RSSSource).all()
-        for rss_source in rss_sources:
-            try:
-                feed = feedparser.parse(rss_source.url)
-                for entry in feed.entries:
-                    published_date = datetime.now()
-                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        published_date = datetime(*entry.published_parsed[:6])
-                    # Check if already exists (by link)
-                    exists = db.query(RawNews).filter(RawNews.link == entry.link).first()
-                    if not exists:
-                        raw_news = RawNews(
-                            rss_source_id=rss_source.id,
-                            title=entry.title if hasattr(entry, 'title') else '',
-                            description=entry.description if hasattr(entry, 'description') else '',
-                            link=entry.link if hasattr(entry, 'link') else '',
-                            published_date=published_date
-                        )
-                        db.add(raw_news)
-                db.commit()
-            except Exception as e:
-                logger.error(f"Error fetching news from {rss_source.url}: {str(e)}")
-
     def deduplicate_and_store_aggregated_news(self, db: Session):
         """
         Deduplicate raw news and store in aggregated_news table (rule-based: title+date+fuzzy).
@@ -374,3 +367,42 @@ class NewsService:
                 )
                 db.add(aggregated)
         db.commit() 
+
+    def fetch_and_store_raw_news(self, db: Session):
+        """
+        Fetch news from all RSS sources in DB, store raw news in raw_news table.
+        """
+        rss_sources = db.query(RSSSource).all()
+        for rss_source in rss_sources:
+            try:
+                # Try with proper SSL first
+                try:
+                    response = requests.get(rss_source.url, verify=certifi.where(), timeout=10)
+                    response.raise_for_status()
+                except Exception as ssl_error:
+                    # Fall back to unverified SSL for development
+                    logger.warning(f"SSL verification failed for {rss_source.url}, trying without verification: {str(ssl_error)}")
+                    response = requests.get(rss_source.url, verify=False, timeout=10)
+                    response.raise_for_status()
+                
+                # Parse the content with feedparser
+                feed = feedparser.parse(response.content)
+                
+                for entry in feed.entries:
+                    published_date = datetime.now()
+                    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                        published_date = datetime(*entry.published_parsed[:6])
+                    # Check if already exists (by link)
+                    exists = db.query(RawNews).filter(RawNews.link == entry.link).first()
+                    if not exists:
+                        raw_news = RawNews(
+                            rss_source_id=rss_source.id,
+                            title=entry.title if hasattr(entry, 'title') else '',
+                            description=entry.description if hasattr(entry, 'description') else '',
+                            link=entry.link if hasattr(entry, 'link') else '',
+                            published_date=published_date
+                        )
+                        db.add(raw_news)
+                db.commit()
+            except Exception as e:
+                logger.error(f"Error fetching news from {rss_source.url}: {str(e)}") 
